@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   AreaChart,
   Area,
@@ -10,12 +10,29 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
-  Cell,
+  Legend,
 } from 'recharts';
+import CalendarHeatmap from './components/CalendarHeatmap';
+
+interface ContributionDay {
+  date: string;
+  contributionCount: number;
+  contributionLevel: string;
+}
+
+interface ContributionWeek {
+  contributionDays: ContributionDay[];
+}
+
+interface ContributionCalendar {
+  totalContributions: number;
+  weeks: ContributionWeek[];
+}
 
 interface YearData {
   year: number;
   total: number;
+  calendar: ContributionCalendar;
 }
 
 interface MonthData {
@@ -49,8 +66,11 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ContributionData | null>(null);
   const [error, setError] = useState('');
-  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [selectedYears, setSelectedYears] = useState<number[]>([]);
+  const [calendarYear, setCalendarYear] = useState<number | null>(null);
   const [showToken, setShowToken] = useState(false);
+  const [areaChartStartYear, setAreaChartStartYear] = useState<number | null>(null);
+  const [areaChartEndYear, setAreaChartEndYear] = useState<number | null>(null);
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -87,7 +107,10 @@ export default function Home() {
       } else {
         setData(result);
         if (result.years.length > 0) {
-          setSelectedYear(result.years[result.years.length - 1].year);
+          // Select the most recent year by default
+          const mostRecentYear = result.years[result.years.length - 1].year;
+          setSelectedYears([mostRecentYear]);
+          setCalendarYear(mostRecentYear);
         }
       }
     } catch {
@@ -98,18 +121,69 @@ export default function Home() {
   };
 
   const currentYear = new Date().getFullYear();
+
+  // Get available years for the area chart (excluding current incomplete year)
+  const availableAreaChartYears = data?.years
+    .filter((y) => y.year < currentYear)
+    .map((y) => y.year)
+    .sort((a, b) => a - b) || [];
+
+  // Filter year chart data based on selected range
   const yearChartData = data?.years
-    .filter((y) => y.year < currentYear) // Exclude incomplete current year
+    .filter((y) => {
+      if (y.year >= currentYear) return false; // Exclude incomplete current year
+      const startYear = areaChartStartYear ?? availableAreaChartYears[0];
+      const endYear = areaChartEndYear ?? availableAreaChartYears[availableAreaChartYears.length - 1];
+      return y.year >= startYear && y.year <= endYear;
+    })
     .map((y) => ({
       year: y.year.toString(),
       contributions: y.total,
     })) || [];
 
-  const monthChartData = selectedYear
-    ? data?.monthlyData.find((m) => m.year === selectedYear)?.months || []
-    : [];
+  // Colors for multi-year comparison (terminal-style greens and complementary colors)
+  const yearColors = [
+    '#00ff88', // terminal green
+    '#00ccff', // cyan
+    '#ff9500', // orange
+    '#bf7fff', // purple
+  ];
 
-  const maxMonthContrib = Math.max(...monthChartData.map((m) => m.count), 1);
+  // Build grouped bar chart data for multiple years
+  const monthChartData = (() => {
+    if (selectedYears.length === 0 || !data) return [];
+
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    return months.map((month) => {
+      const entry: { month: string; [key: string]: string | number } = { month };
+
+      selectedYears.forEach((year) => {
+        const yearMonths = data.monthlyData.find((m) => m.year === year)?.months || [];
+        const monthData = yearMonths.find((m) => m.month === month);
+        entry[`year_${year}`] = monthData?.count || 0;
+      });
+
+      return entry;
+    });
+  })();
+
+  // Toggle year selection (max 4 years)
+  const toggleYear = (year: number) => {
+    setSelectedYears((prev) => {
+      if (prev.includes(year)) {
+        // Remove year (but keep at least one)
+        const filtered = prev.filter((y) => y !== year);
+        return filtered.length > 0 ? filtered : prev;
+      } else {
+        // Add year (max 4)
+        if (prev.length >= 4) {
+          return [...prev.slice(1), year]; // Remove oldest, add new
+        }
+        return [...prev, year].sort((a, b) => a - b);
+      }
+    });
+  };
 
   return (
     <div className="min-h-screen p-8 relative">
@@ -276,6 +350,9 @@ export default function Home() {
               />
             </div>
 
+            {/* Honest Framing Section */}
+            <HonestFraming />
+
             {/* Yearly Trend Chart */}
             <div
               className="p-6 rounded-lg animate-fade-in"
@@ -285,10 +362,69 @@ export default function Home() {
                 animationDelay: '0.2s',
               }}
             >
-              <h2 className="text-lg font-medium mb-6 flex items-center gap-2">
-                <span className="text-[var(--terminal-green)]">▸</span>
-                Contributions Over Time
-              </h2>
+              <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+                <h2 className="text-lg font-medium flex items-center gap-2">
+                  <span className="text-[var(--terminal-green)]">▸</span>
+                  Contributions Over Time
+                </h2>
+
+                {availableAreaChartYears.length > 1 && (
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-[var(--text-tertiary)]">From:</span>
+                      <div className="flex gap-1 flex-wrap">
+                        {availableAreaChartYears.map((year) => {
+                          const effectiveEndYear = areaChartEndYear ?? availableAreaChartYears[availableAreaChartYears.length - 1];
+                          const isDisabled = year > effectiveEndYear;
+                          const isSelected = (areaChartStartYear ?? availableAreaChartYears[0]) === year;
+                          return (
+                            <button
+                              key={`start-${year}`}
+                              onClick={() => setAreaChartStartYear(year)}
+                              disabled={isDisabled}
+                              className={`px-2 py-0.5 rounded text-xs transition-all ${
+                                isSelected
+                                  ? 'bg-[var(--terminal-green)] text-[var(--bg-deep)]'
+                                  : isDisabled
+                                  ? 'bg-[var(--bg-elevated)] text-[var(--text-tertiary)] opacity-50 cursor-not-allowed'
+                                  : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                              }`}
+                            >
+                              {year}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-[var(--text-tertiary)]">To:</span>
+                      <div className="flex gap-1 flex-wrap">
+                        {availableAreaChartYears.map((year) => {
+                          const effectiveStartYear = areaChartStartYear ?? availableAreaChartYears[0];
+                          const isDisabled = year < effectiveStartYear;
+                          const isSelected = (areaChartEndYear ?? availableAreaChartYears[availableAreaChartYears.length - 1]) === year;
+                          return (
+                            <button
+                              key={`end-${year}`}
+                              onClick={() => setAreaChartEndYear(year)}
+                              disabled={isDisabled}
+                              className={`px-2 py-0.5 rounded text-xs transition-all ${
+                                isSelected
+                                  ? 'bg-[var(--terminal-green)] text-[var(--bg-deep)]'
+                                  : isDisabled
+                                  ? 'bg-[var(--bg-elevated)] text-[var(--text-tertiary)] opacity-50 cursor-not-allowed'
+                                  : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                              }`}
+                            >
+                              {year}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
@@ -348,26 +484,36 @@ export default function Home() {
                   Monthly Breakdown
                 </h2>
 
-                <div className="flex gap-2 flex-wrap">
-                  {data.years.map((y) => (
-                    <button
-                      key={y.year}
-                      onClick={() => setSelectedYear(y.year)}
-                      className={`px-3 py-1 rounded text-sm transition-all ${
-                        selectedYear === y.year
-                          ? 'bg-[var(--terminal-green)] text-[var(--bg-deep)]'
-                          : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                      }`}
-                    >
-                      {y.year}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-4 flex-wrap">
+                  <span className="text-xs text-[var(--text-tertiary)]">
+                    Select up to 4 years:
+                  </span>
+                  <div className="flex gap-2 flex-wrap">
+                    {data.years.map((y) => {
+                      const isSelected = selectedYears.includes(y.year);
+                      const colorIndex = selectedYears.indexOf(y.year);
+                      return (
+                        <button
+                          key={y.year}
+                          onClick={() => toggleYear(y.year)}
+                          className={`px-3 py-1 rounded text-sm transition-all border ${
+                            isSelected
+                              ? 'text-[var(--bg-deep)] border-transparent'
+                              : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-[var(--border)]'
+                          }`}
+                          style={isSelected ? { backgroundColor: yearColors[colorIndex] } : {}}
+                        >
+                          {y.year}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
-              <div className="h-48">
+              <div className="h-56">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthChartData}>
+                  <BarChart data={monthChartData} barCategoryGap="15%">
                     <XAxis
                       dataKey="month"
                       axisLine={false}
@@ -386,21 +532,69 @@ export default function Home() {
                         borderRadius: '8px',
                       }}
                       labelStyle={{ color: '#e8e8e8' }}
-                      itemStyle={{ color: '#00ff88' }}
-                      formatter={(value) => [Number(value).toLocaleString(), 'Contributions']}
+                      formatter={(value, name) => {
+                        const year = String(name).replace('year_', '');
+                        return [Number(value).toLocaleString(), year];
+                      }}
                     />
-                    <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                      {monthChartData.map((entry, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={`rgba(0, 255, 136, ${0.3 + (entry.count / maxMonthContrib) * 0.7})`}
-                        />
-                      ))}
-                    </Bar>
+                    {selectedYears.length > 1 && (
+                      <Legend
+                        formatter={(value: string) => value.replace('year_', '')}
+                        wrapperStyle={{ paddingTop: '10px' }}
+                        iconType="square"
+                      />
+                    )}
+                    {selectedYears.map((year, index) => (
+                      <Bar
+                        key={year}
+                        dataKey={`year_${year}`}
+                        fill={yearColors[index]}
+                        radius={[2, 2, 0, 0]}
+                        name={`year_${year}`}
+                      />
+                    ))}
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
+
+            {/* Calendar Heatmap - independent year selector */}
+            {calendarYear && (
+              <div
+                className="p-6 rounded-lg animate-fade-in"
+                style={{
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border)',
+                  animationDelay: '0.4s',
+                }}
+              >
+                <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+                  <h2 className="text-lg font-medium flex items-center gap-2">
+                    <span className="text-[var(--terminal-green)]">▸</span>
+                    Contribution Calendar
+                  </h2>
+                  <div className="flex gap-2 flex-wrap">
+                    {data.years.map((y) => (
+                      <button
+                        key={y.year}
+                        onClick={() => setCalendarYear(y.year)}
+                        className={`px-3 py-1 rounded text-sm transition-all ${
+                          calendarYear === y.year
+                            ? 'bg-[var(--terminal-green)] text-[var(--bg-deep)]'
+                            : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                        }`}
+                      >
+                        {y.year}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <CalendarHeatmap
+                  weeks={data.years.find((y) => y.year === calendarYear)?.calendar.weeks || []}
+                />
+              </div>
+            )}
 
             {/* Reset Button */}
             <div className="text-center">
@@ -453,6 +647,88 @@ function StatCard({
       </div>
       {subvalue && (
         <div className="text-xs text-[var(--text-secondary)] mt-1">{subvalue}</div>
+      )}
+    </div>
+  );
+}
+
+function HonestFraming() {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const toggle = useCallback(() => setIsExpanded((prev) => !prev), []);
+
+  return (
+    <div
+      className="rounded-lg animate-fade-in overflow-hidden"
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        animationDelay: '0.15s',
+      }}
+    >
+      <button
+        onClick={toggle}
+        className="w-full px-6 py-4 flex items-center gap-3 text-left hover:bg-[var(--bg-elevated)] transition-colors"
+        aria-expanded={isExpanded}
+      >
+        <span
+          className="text-[var(--terminal-green)] transition-transform duration-200"
+          style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+        >
+          ▸
+        </span>
+        <span className="text-[var(--text-secondary)]">
+          <span className="text-[var(--accent-orange)]">?</span>{' '}
+          What this data actually shows
+        </span>
+        <span className="text-[var(--text-tertiary)] text-sm ml-auto">
+          {isExpanded ? 'collapse' : 'expand'}
+        </span>
+      </button>
+
+      {isExpanded && (
+        <div
+          className="px-6 pb-5 pt-2 border-t"
+          style={{ borderColor: 'var(--border)' }}
+        >
+          <ul className="space-y-3 text-sm text-[var(--text-secondary)]">
+            <li className="flex items-start gap-2">
+              <span className="text-[var(--terminal-green)] mt-0.5">→</span>
+              <span>
+                <strong className="text-[var(--text-primary)]">Activity, not achievement.</strong>{' '}
+                Contribution count measures how often you pushed code, not how good it was.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-[var(--terminal-green)] mt-0.5">→</span>
+              <span>
+                <strong className="text-[var(--text-primary)]">Private repos are invisible.</strong>{' '}
+                ~81% of professional dev work happens in private repositories that don&apos;t show here.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-[var(--terminal-green)] mt-0.5">→</span>
+              <span>
+                <strong className="text-[var(--text-primary)]">Squash merges hide work.</strong>{' '}
+                A 50-commit PR becomes 1 contribution when squash-merged.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-[var(--terminal-green)] mt-0.5">→</span>
+              <span>
+                <strong className="text-[var(--text-primary)]">Invisible labor.</strong>{' '}
+                Code reviews, mentoring, architecture discussions, and planning don&apos;t appear.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-[var(--terminal-green)] mt-0.5">→</span>
+              <span>
+                <strong className="text-[var(--text-primary)]">Streaks aren&apos;t healthy.</strong>{' '}
+                The graph gamifies daily commits. Taking breaks is good, actually.
+              </span>
+            </li>
+          </ul>
+        </div>
       )}
     </div>
   );

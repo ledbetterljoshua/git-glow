@@ -16,7 +16,7 @@
   --accent-blue: #4a9eff;
 
   --text-primary: #e8e8e8;
-  --text-secondary: #888;
+  --text-secondary: #999;
   --text-tertiary: #555;
 
   --border: #2a2d38;
@@ -34,7 +34,7 @@ body {
   overflow-x: hidden;
 }
 
-/* Scanline effect */
+/* Scanline effect - subtle but perceptible CRT lines */
 body::before {
   content: '';
   position: fixed;
@@ -46,8 +46,8 @@ body::before {
     0deg,
     transparent,
     transparent 2px,
-    rgba(0, 255, 136, 0.01) 2px,
-    rgba(0, 255, 136, 0.01) 4px
+    rgba(0, 255, 136, 0.03) 2px,
+    rgba(0, 255, 136, 0.03) 4px
   );
   pointer-events: none;
   z-index: 1000;
@@ -96,9 +96,47 @@ body::after {
 }
 
 /* Animations */
+
+/* Classic blink for elements that need hard on/off */
 @keyframes blink {
   0%, 50% { opacity: 1; }
   51%, 100% { opacity: 0; }
+}
+
+/* Breathing cursor - smooth fade like a real CRT phosphor decay */
+@keyframes cursor-breathe {
+  0%, 100% {
+    opacity: 1;
+    text-shadow: 0 0 8px var(--terminal-green);
+  }
+  40% {
+    opacity: 0.9;
+    text-shadow: 0 0 12px var(--terminal-green);
+  }
+  50% {
+    opacity: 0.15;
+    text-shadow: 0 0 2px var(--terminal-green);
+  }
+  90% {
+    opacity: 0.85;
+    text-shadow: 0 0 6px var(--terminal-green);
+  }
+}
+
+/* Terminal spinner using braille dots */
+@keyframes terminal-spin {
+  0% { content: '⠋'; }
+  8.33% { content: '⠙'; }
+  16.66% { content: '⠹'; }
+  25% { content: '⠸'; }
+  33.33% { content: '⠼'; }
+  41.66% { content: '⠴'; }
+  50% { content: '⠦'; }
+  58.33% { content: '⠧'; }
+  66.66% { content: '⠇'; }
+  75% { content: '⠏'; }
+  83.33% { content: '⠋'; }
+  100% { content: '⠙'; }
 }
 
 @keyframes glow-pulse {
@@ -150,9 +188,188 @@ body::after {
   animation: glow-pulse 3s ease-in-out infinite;
 }
 
+/* Breathing cursor - smoother, more organic feel */
+.cursor-breathe::after {
+  content: '█';
+  animation: cursor-breathe 1.2s ease-in-out infinite;
+  color: var(--terminal-green);
+}
+
+/* Phosphor glow - simulates CRT text glow */
+.terminal-glow {
+  text-shadow:
+    0 0 2px var(--terminal-green),
+    0 0 8px rgba(0, 255, 136, 0.6),
+    0 0 16px rgba(0, 255, 136, 0.3);
+}
+
+/* Subtle glow variant for secondary elements */
+.terminal-glow-subtle {
+  text-shadow:
+    0 0 1px var(--terminal-green),
+    0 0 4px rgba(0, 255, 136, 0.4);
+}
+
+/* Terminal spinner - use on a ::before pseudo-element */
+.terminal-spinner::before {
+  content: '⠋';
+  animation: terminal-spin 0.8s steps(1) infinite;
+  color: var(--terminal-green);
+  display: inline-block;
+  margin-right: 0.5em;
+}
+
+/* Staggered fade-in animations for chart/list elements */
+.stagger-fade-in > * {
+  animation: fade-in-up 0.4s ease-out backwards;
+}
+
+.stagger-fade-in > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-fade-in > *:nth-child(2) { animation-delay: 50ms; }
+.stagger-fade-in > *:nth-child(3) { animation-delay: 100ms; }
+.stagger-fade-in > *:nth-child(4) { animation-delay: 150ms; }
+.stagger-fade-in > *:nth-child(5) { animation-delay: 200ms; }
+.stagger-fade-in > *:nth-child(6) { animation-delay: 250ms; }
+.stagger-fade-in > *:nth-child(7) { animation-delay: 300ms; }
+.stagger-fade-in > *:nth-child(8) { animation-delay: 350ms; }
+.stagger-fade-in > *:nth-child(9) { animation-delay: 400ms; }
+.stagger-fade-in > *:nth-child(10) { animation-delay: 450ms; }
+.stagger-fade-in > *:nth-child(11) { animation-delay: 500ms; }
+.stagger-fade-in > *:nth-child(12) { animation-delay: 550ms; }
+
+/* Faster stagger variant */
+.stagger-fade-in-fast > * {
+  animation: fade-in-up 0.3s ease-out backwards;
+}
+
+.stagger-fade-in-fast > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-fade-in-fast > *:nth-child(2) { animation-delay: 30ms; }
+.stagger-fade-in-fast > *:nth-child(3) { animation-delay: 60ms; }
+.stagger-fade-in-fast > *:nth-child(4) { animation-delay: 90ms; }
+.stagger-fade-in-fast > *:nth-child(5) { animation-delay: 120ms; }
+.stagger-fade-in-fast > *:nth-child(6) { animation-delay: 150ms; }
+.stagger-fade-in-fast > *:nth-child(7) { animation-delay: 180ms; }
+.stagger-fade-in-fast > *:nth-child(8) { animation-delay: 210ms; }
+.stagger-fade-in-fast > *:nth-child(9) { animation-delay: 240ms; }
+.stagger-fade-in-fast > *:nth-child(10) { animation-delay: 270ms; }
+.stagger-fade-in-fast > *:nth-child(11) { animation-delay: 300ms; }
+.stagger-fade-in-fast > *:nth-child(12) { animation-delay: 330ms; }
+
 /* Contribution cell colors */
 .contrib-0 { background: var(--bg-surface); }
 .contrib-1 { background: var(--contribution-low); }
 .contrib-2 { background: var(--contribution-med); }
 .contrib-3 { background: var(--contribution-high); }
 .contrib-4 { background: var(--contribution-max); box-shadow: 0 0 8px var(--terminal-green); }
+
+/* ============================================
+   ACCESSIBILITY
+   ============================================ */
+
+/* Focus-visible styles for keyboard navigation */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--terminal-green);
+  outline-offset: 2px;
+}
+
+/* Reduced motion support - respects user preferences for vestibular issues */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Disable the scanline animation but keep static effect */
+  body::before {
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 255, 136, 0.02) 2px,
+      rgba(0, 255, 136, 0.02) 4px
+    );
+  }
+
+  /* Static cursor instead of blinking */
+  .cursor-blink::after,
+  .cursor-breathe::after {
+    animation: none;
+    opacity: 1;
+  }
+
+  /* Remove glow pulse */
+  .glow {
+    animation: none;
+    text-shadow: 0 0 10px var(--terminal-green);
+  }
+
+  /* Static spinner - show first frame only */
+  .terminal-spinner::before {
+    animation: none;
+    content: '⠋';
+  }
+
+  /* Disable stagger animations - show all items immediately */
+  .stagger-fade-in > *,
+  .stagger-fade-in-fast > * {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* High contrast mode - for users who need more visual distinction */
+@media (prefers-contrast: more) {
+  :root {
+    --bg-deep: #000000;
+    --bg-surface: #0a0a0a;
+    --bg-elevated: #151515;
+
+    --terminal-green: #00ff99;
+    --terminal-green-dim: #00dd77;
+
+    --text-primary: #ffffff;
+    --text-secondary: #cccccc;
+    --text-tertiary: #999999;
+
+    --border: #444444;
+
+    --contribution-low: #1a4030;
+    --contribution-med: #2a7050;
+    --contribution-high: #40b080;
+    --contribution-max: #00ff99;
+  }
+
+  /* Stronger focus indicators in high contrast mode */
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  a:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 3px solid var(--terminal-green);
+    outline-offset: 3px;
+  }
+
+  /* Disable vignette for maximum visibility */
+  body::after {
+    display: none;
+  }
+
+  /* Reduce scanline intensity */
+  body::before {
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 255, 153, 0.01) 2px,
+      rgba(0, 255, 153, 0.01) 4px
+    );
+  }
+}

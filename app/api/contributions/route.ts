@@ -23,12 +23,24 @@ interface YearContributions {
   calendar: ContributionCalendar;
 }
 
+interface FetchError {
+  year: number;
+  error: string;
+}
+
+interface FetchResult {
+  year: number;
+  calendar: ContributionCalendar | null;
+  error?: string;
+}
+
 async function fetchYearContributions(
   username: string,
   token: string,
+  year: number,
   from: string,
   to: string
-): Promise<ContributionCalendar | null> {
+): Promise<FetchResult> {
   const query = `
     query($username: String!, $from: DateTime!, $to: DateTime!) {
       user(login: $username) {
@@ -61,17 +73,48 @@ async function fetchYearContributions(
       }),
     });
 
+    if (!response.ok) {
+      const errorText = await response.text();
+      return {
+        year,
+        calendar: null,
+        error: `HTTP ${response.status}: ${errorText.slice(0, 100)}`,
+      };
+    }
+
     const data = await response.json();
 
     if (data.errors) {
-      console.error('GraphQL errors:', data.errors);
-      return null;
+      const errorMessage = data.errors
+        .map((e: { message: string }) => e.message)
+        .join('; ');
+      console.error(`GraphQL errors for year ${year}:`, data.errors);
+      return {
+        year,
+        calendar: null,
+        error: errorMessage,
+      };
     }
 
-    return data.data?.user?.contributionsCollection?.contributionCalendar || null;
+    const calendar = data.data?.user?.contributionsCollection?.contributionCalendar || null;
+
+    if (!calendar) {
+      return {
+        year,
+        calendar: null,
+        error: 'No contribution data returned (user may not exist or have no contributions)',
+      };
+    }
+
+    return { year, calendar };
   } catch (error) {
-    console.error('Error fetching contributions:', error);
-    return null;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Error fetching contributions for year ${year}:`, error);
+    return {
+      year,
+      calendar: null,
+      error: errorMessage,
+    };
   }
 }
 
@@ -88,26 +131,56 @@ export async function POST(request: NextRequest) {
 
     const currentYear = new Date().getFullYear();
     const yearsToFetch = years || 5;
-    const results: YearContributions[] = [];
 
+    // Build array of year fetch promises
+    const fetchPromises: Promise<FetchResult>[] = [];
     for (let i = 0; i < yearsToFetch; i++) {
       const year = currentYear - i;
       const from = `${year}-01-01T00:00:00Z`;
       const to = `${year}-12-31T23:59:59Z`;
+      fetchPromises.push(fetchYearContributions(username, token, year, from, to));
+    }
 
-      const calendar = await fetchYearContributions(username, token, from, to);
+    // Fetch all years in parallel
+    const fetchResults = await Promise.all(fetchPromises);
 
-      if (calendar) {
+    // Separate successful results from errors
+    const results: YearContributions[] = [];
+    const errors: FetchError[] = [];
+
+    for (const result of fetchResults) {
+      if (result.calendar) {
         results.push({
-          year,
-          total: calendar.totalContributions,
-          calendar,
+          year: result.year,
+          total: result.calendar.totalContributions,
+          calendar: result.calendar,
+        });
+      } else if (result.error) {
+        errors.push({
+          year: result.year,
+          error: result.error,
         });
       }
     }
 
     // Sort by year ascending
     results.sort((a, b) => a.year - b.year);
+
+    // Handle edge case where all years failed
+    if (results.length === 0) {
+      return NextResponse.json({
+        username,
+        years: [],
+        monthlyData: [],
+        stats: {
+          totalContributions: 0,
+          averagePerYear: 0,
+          bestYear: { year: currentYear, total: 0 },
+          yearsActive: 0,
+        },
+        warnings: errors.length > 0 ? errors : [{ year: currentYear, error: 'No contribution data could be fetched' }],
+      });
+    }
 
     // Calculate some stats
     const totalContributions = results.reduce((sum, y) => sum + y.total, 0);
@@ -149,7 +222,19 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({
+    // Build response with backward-compatible structure
+    const response: {
+      username: string;
+      years: YearContributions[];
+      monthlyData: { year: number; months: { month: string; count: number }[] }[];
+      stats: {
+        totalContributions: number;
+        averagePerYear: number;
+        bestYear: { year: number; total: number };
+        yearsActive: number;
+      };
+      warnings?: FetchError[];
+    } = {
       username,
       years: results,
       monthlyData,
@@ -162,7 +247,14 @@ export async function POST(request: NextRequest) {
         },
         yearsActive: results.length,
       },
-    });
+    };
+
+    // Include warnings if any years failed to fetch
+    if (errors.length > 0) {
+      response.warnings = errors;
+    }
+
+    return NextResponse.json(response);
   } catch (error) {
     console.error('Error:', error);
     return NextResponse.json(
